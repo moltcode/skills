@@ -13,7 +13,7 @@ Installs `typescript-language-server` and `typescript` using `bun` into the agen
 
 ## File Types
 
-`.ts`, `.tsx`, `.js`, `.jsx`
+`.ts`, `.tsx`, `.js`, `.jsx`, `.mjs`, `.cjs`, `.mts`, `.cts`, `.json`
 
 ## LSP Kind
 
@@ -55,6 +55,90 @@ chmod +x ~/.moltcode_agents/lsps/typescript-language-server/latest/bin/typescrip
 ```
 
 This should print the version number of typescript-language-server.
+
+## Configuration
+
+After installing the binary, add an LSP entry to the project's `.moltcode/project.yaml` if the project doesn't already have one. This is optional for simple single-root projects (the built-in ServerCatalog will find the binary automatically), but recommended for monorepos or when you need a custom working directory.
+
+Add to `lsp_kinds:` in `project.yaml`:
+
+```yaml
+lsp_kinds:
+  typescript:
+    default_version: default
+    label: TypeScript Language Server
+    document:
+      language_ids:
+        ".ts": typescript
+        ".tsx": typescriptreact
+        ".js": javascript
+        ".jsx": javascriptreact
+        ".mjs": javascript
+        ".cjs": javascript
+        ".mts": typescript
+        ".cts": typescript
+        ".json": json
+    versions:
+      default:
+        command: typescript-language-server
+        args: ["--stdio"]
+        cwd: .
+        description: TypeScript/JavaScript language server
+```
+
+Then add a process entry under `processes:` that references this LSP kind:
+
+```yaml
+processes:
+  my-project-typescript-lsp:
+    type: lsp
+    kind: typescript
+    auto_start: false
+    label: My Project TypeScript LSP
+    restart:
+      backoff_ms: 2000
+      max_restarts: 3
+      policy: on_failure
+    tags: [group:lsp]
+```
+
+For monorepos with multiple TypeScript packages, use `version` on the process to select different `cwd` values. You can also use a project-local `pnpm exec` or `npx` to run the server from a specific package:
+
+```yaml
+lsp_kinds:
+  typescript:
+    default_version: frontend
+    label: TypeScript Language Server
+    document:
+      language_ids:
+        ".ts": typescript
+        ".tsx": typescriptreact
+        ".js": javascript
+        ".jsx": javascriptreact
+        ".mjs": javascript
+        ".cjs": javascript
+        ".mts": typescript
+        ".cts": typescript
+        ".json": json
+    versions:
+      frontend:
+        command: pnpm
+        args: ["exec", "typescript-language-server", "--stdio"]
+        cwd: frontend
+        description: TypeScript LSP for frontend package
+      api:
+        command: pnpm
+        args: ["exec", "typescript-language-server", "--stdio"]
+        cwd: api
+        description: TypeScript LSP for API package
+```
+
+## How it works
+
+- The Molt LSP system has a built-in ServerCatalog that knows about common LSP servers. For TypeScript/JavaScript, it expects `typescript-language-server --stdio`.
+- If the binary is installed at `~/.moltcode_agents/lsps/typescript-language-server/latest/bin/typescript-language-server`, it will be found automatically via PATH.
+- Adding to `project.yaml` is optional but recommended for monorepos where you need multiple LSP instances with different root paths (`cwd`).
+- The `molt__LSP` tool automatically routes requests to the right LSP server based on file extension (`.ts`, `.tsx`, `.js`, `.jsx`, `.mjs`, `.cjs`, `.mts`, `.cts`, `.json` all map to the `typescript` LSP kind).
 
 ## Troubleshooting
 

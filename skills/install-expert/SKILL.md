@@ -14,7 +14,7 @@ Installs `expert`, the official Elixir language server from elixir-lang, by down
 
 ## File Types
 
-`.ex`, `.exs`
+`.ex`, `.exs`, `.heex`, `.leex`, `.eex`
 
 ## LSP Kind
 
@@ -56,6 +56,82 @@ rm -f /tmp/expert.tar.gz
 ```
 
 This should print the Expert version.
+
+## Configuration
+
+After installing the binary, add an LSP entry to the project's `.moltcode/project.yaml` if the project doesn't already have one. This is optional for simple single-root projects (the built-in ServerCatalog will find the binary automatically), but recommended for monorepos or when you need a custom working directory.
+
+Add to `lsp_kinds:` in `project.yaml`:
+
+```yaml
+lsp_kinds:
+  elixir:
+    default_version: default
+    label: Expert (Elixir)
+    document:
+      language_ids:
+        ".ex": elixir
+        ".exs": elixir
+        ".heex": phoenix-heex
+        ".leex": html-eex
+        ".eex": html-eex
+    versions:
+      default:
+        command: expert
+        args: ["--stdio"]
+        cwd: .
+        description: Elixir language server
+```
+
+Then add a process entry under `processes:` that references this LSP kind:
+
+```yaml
+processes:
+  my-project-elixir-lsp:
+    type: lsp
+    kind: elixir
+    auto_start: false
+    label: My Project Elixir LSP
+    restart:
+      backoff_ms: 2000
+      max_restarts: 3
+      policy: on_failure
+    tags: [group:lsp]
+```
+
+For monorepos with multiple Elixir sub-projects, use `version` on the process to select different `cwd` values:
+
+```yaml
+lsp_kinds:
+  elixir:
+    default_version: umbrella
+    label: Expert (Elixir)
+    document:
+      language_ids:
+        ".ex": elixir
+        ".exs": elixir
+        ".heex": phoenix-heex
+        ".leex": html-eex
+        ".eex": html-eex
+    versions:
+      umbrella:
+        command: expert
+        args: ["--stdio"]
+        cwd: apps/umbrella
+        description: Elixir LSP for umbrella app
+      hub:
+        command: expert
+        args: ["--stdio"]
+        cwd: apps/hub
+        description: Elixir LSP for hub app
+```
+
+## How it works
+
+- The Molt LSP system has a built-in ServerCatalog that knows about common LSP servers. For Elixir, it expects `expert --stdio`.
+- If the binary is installed at `~/.moltcode_agents/lsps/expert/latest/bin/expert`, it will be found automatically via PATH.
+- Adding to `project.yaml` is optional but recommended for monorepos where you need multiple LSP instances with different root paths (`cwd`).
+- The `molt__LSP` tool automatically routes requests to the right LSP server based on file extension (`.ex`, `.exs`, `.heex`, `.leex`, `.eex` all map to the `elixir` LSP kind).
 
 ## Troubleshooting
 

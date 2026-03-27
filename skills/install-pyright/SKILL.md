@@ -13,7 +13,7 @@ Installs `pyright-langserver` (Pyright language server) using `bun` into the age
 
 ## File Types
 
-`.py`
+`.py`, `.pyi`
 
 ## LSP Kind
 
@@ -55,6 +55,76 @@ chmod +x ~/.moltcode_agents/lsps/pyright/latest/bin/pyright-langserver
 ```
 
 This should print the Pyright version number.
+
+## Configuration
+
+After installing the binary, add an LSP entry to the project's `.moltcode/project.yaml` if the project doesn't already have one. This is optional for simple single-root projects (the built-in ServerCatalog will find the binary automatically), but recommended for monorepos or when you need a custom working directory.
+
+Add to `lsp_kinds:` in `project.yaml`:
+
+```yaml
+lsp_kinds:
+  python:
+    default_version: default
+    label: Pyright
+    document:
+      language_ids:
+        ".py": python
+        ".pyi": python
+    versions:
+      default:
+        command: pyright-langserver
+        args: ["--stdio"]
+        cwd: .
+        description: Python language server
+```
+
+Then add a process entry under `processes:` that references this LSP kind:
+
+```yaml
+processes:
+  my-project-python-lsp:
+    type: lsp
+    kind: python
+    auto_start: false
+    label: My Project Python LSP
+    restart:
+      backoff_ms: 2000
+      max_restarts: 3
+      policy: on_failure
+    tags: [group:lsp]
+```
+
+For monorepos with multiple Python packages, use `version` on the process to select different `cwd` values:
+
+```yaml
+lsp_kinds:
+  python:
+    default_version: backend
+    label: Pyright
+    document:
+      language_ids:
+        ".py": python
+        ".pyi": python
+    versions:
+      backend:
+        command: pyright-langserver
+        args: ["--stdio"]
+        cwd: backend
+        description: Pyright for backend package
+      scripts:
+        command: pyright-langserver
+        args: ["--stdio"]
+        cwd: scripts
+        description: Pyright for scripts package
+```
+
+## How it works
+
+- The Molt LSP system has a built-in ServerCatalog that knows about common LSP servers. For Python, it expects `pyright-langserver --stdio`.
+- If the binary is installed at `~/.moltcode_agents/lsps/pyright/latest/bin/pyright-langserver`, it will be found automatically via PATH.
+- Adding to `project.yaml` is optional but recommended for monorepos where you need multiple LSP instances with different root paths (`cwd`).
+- The `molt__LSP` tool automatically routes requests to the right LSP server based on file extension (`.py` and `.pyi` map to the `python` LSP kind).
 
 ## Troubleshooting
 

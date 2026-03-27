@@ -33,13 +33,94 @@ For `workspaceSymbol`, provide a `query` string instead of line/character.
 
 ## Language → LSP Server Mapping
 
-| Language | File Extensions | LSP Kind | Server Binary |
-|----------|----------------|----------|---------------|
-| TypeScript/JavaScript | `.ts`, `.tsx`, `.js`, `.jsx` | `typescript` | `typescript-language-server` |
-| Go | `.go` | `gopls` | `gopls` |
-| Rust | `.rs` | `rust` | `rust-analyzer` |
-| Python | `.py` | `python` | `pyright-langserver` |
-| Elixir | `.ex`, `.exs` | `elixir` | `expert` |
+### File Extension → LSP Kind
+
+The `molt__LSP` tool uses file extensions to determine which LSP server to route requests to. It checks the project's `project.yaml` first, then falls back to the built-in ServerCatalog.
+
+| File Extension | LSP Kind | Server Binary | Server Command |
+|---------------|----------|---------------|----------------|
+| `.ts`, `.tsx`, `.mjs`, `.cjs`, `.mts`, `.cts`, `.json` | `typescript` | `typescript-language-server` | `typescript-language-server --stdio` |
+| `.js`, `.jsx` | `typescript` | `typescript-language-server` | `typescript-language-server --stdio` |
+| `.go`, `.mod`, `.sum`, `.work` | `gopls` | `gopls` | `gopls serve` |
+| `.rs` | `rust` | `rust-analyzer` | `rust-analyzer` |
+| `.py`, `.pyi` | `python` | `pyright-langserver` | `pyright-langserver --stdio` |
+| `.ex`, `.exs`, `.heex`, `.leex`, `.eex` | `elixir` | `expert` | `expert --stdio` |
+
+### LSP Kind → Language IDs
+
+Each LSP kind maps file extensions to LSP language identifiers used in the protocol:
+
+| LSP Kind | Extension → Language ID |
+|----------|------------------------|
+| `typescript` | `.ts` → `typescript`, `.tsx` → `typescriptreact`, `.js` → `javascript`, `.jsx` → `javascriptreact`, `.mjs`/`.cjs` → `javascript`, `.mts`/`.cts` → `typescript`, `.json` → `json` |
+| `gopls` | `.go` → `go`, `.mod` → `go.mod`, `.sum` → `go.sum`, `.work` → `go.work` |
+| `rust` | `.rs` → `rust` |
+| `python` | `.py` → `python`, `.pyi` → `python` |
+| `elixir` | `.ex`/`.exs` → `elixir`, `.heex` → `phoenix-heex`, `.leex`/`.eex` → `html-eex` |
+
+## Server Resolution
+
+The LSP system resolves which server to use through a multi-step process:
+
+1. **Project config first**: Check `lsp_kinds` in `.moltcode/project.yaml` for a matching file extension
+2. **Built-in fallback**: If no project config matches, use the built-in `@extension_to_kind` mapping
+3. **Process lookup**: Find a configured LSP process of that kind in the project's `processes:` section
+4. **ServerCatalog fallback**: If no process is configured, try the built-in ServerCatalog and create a synthetic process ID (`lsp_<kind>`)
+5. **Binary discovery**: The binary is resolved from PATH, which includes `~/.moltcode_agents/lsps/<name>/latest/bin/`
+
+### When project.yaml is NOT needed
+
+For simple, single-root projects, you don't need to configure `project.yaml` at all. If the LSP binary is:
+- On your system PATH, or
+- Installed at `~/.moltcode_agents/lsps/<name>/latest/bin/<binary>`
+
+...the ServerCatalog will find it automatically and use the project root as the working directory.
+
+### When project.yaml IS needed
+
+You should add LSP configuration to `.moltcode/project.yaml` when:
+- **Monorepos**: You need different LSP instances with different root paths (e.g., `frontend/` vs `api/`)
+- **Custom commands**: You want to run the server via a package manager (e.g., `pnpm exec typescript-language-server --stdio`)
+- **Multiple versions**: You need different server configurations for different parts of the project
+- **Custom language IDs**: You want to override which file extensions map to which LSP kind
+
+### project.yaml LSP structure
+
+LSP configuration has two parts: `lsp_kinds` (server definitions) and `processes` (instances):
+
+```yaml
+# 1. Define the LSP kind with its server command and language mappings
+lsp_kinds:
+  typescript:                          # The LSP kind identifier
+    default_version: frontend          # Which version to use by default
+    label: TypeScript Language Server   # Display name
+    document:
+      language_ids:                    # File extension → LSP language ID
+        ".ts": typescript
+        ".tsx": typescriptreact
+        ".js": javascript
+        ".jsx": javascriptreact
+    versions:
+      frontend:                        # A named version/configuration
+        command: pnpm                  # Binary to execute
+        args: ["exec", "typescript-language-server", "--stdio"]
+        cwd: frontend                  # Working directory (relative to project root)
+        description: Frontend TypeScript LSP
+
+# 2. Create process entries that reference the LSP kind
+processes:
+  frontend-typescript-lsp:
+    type: lsp                          # Must be "lsp"
+    kind: typescript                   # References the lsp_kinds key above
+    version: frontend                  # Optional: selects a specific version
+    auto_start: false
+    label: Frontend TypeScript LSP
+    restart:
+      backoff_ms: 2000
+      max_restarts: 3
+      policy: on_failure
+    tags: [group:lsp]
+```
 
 ## Common Workflows
 
@@ -78,6 +159,8 @@ If the LSP tool returns a "binary not found" error, the corresponding language s
 ## Monorepo Awareness
 
 The LSP system routes requests to the correct language server based on the file path and the project's `project.yaml` configuration. In monorepos with multiple languages, each file is automatically handled by the appropriate server — no manual routing needed.
+
+For monorepos that need multiple instances of the same LSP kind (e.g., separate TypeScript servers for `frontend/` and `api/`), configure multiple versions under `lsp_kinds` and reference them with separate process entries.
 
 ## Tips
 
